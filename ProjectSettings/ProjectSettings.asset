@@ -718,7 +718,7 @@ PlayerSettings:
   facebookSdkVersion: 7.9.4
   apiCompatibilityLevel: 2
   cloudProjectId: 267a9ef4-04aa-4896-a179-346c6db87551
-  projectName: 
+  projectName: model-viewer-multiplayer
   organizationId: warrickct
   cloudEnabled: 0
   enableNativePlatformBackendsForNewInputSystem: 0

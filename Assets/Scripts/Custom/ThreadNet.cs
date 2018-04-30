@@ -89,6 +89,30 @@ public class ThreadNet : MonoBehaviour {
 
 
     /// <summary>
+    /// Public function to send models from other functions.
+    /// </summary>
+    /// <param name="model"></param>
+    public void SendModel(GameObject model)
+    {
+        Mesh mesh = model.GetComponent<MeshFilter>().mesh;
+        Vector4[] tangents = mesh.tangents;
+        Vector3[] vertices = mesh.vertices;
+        Vector3[] normals = mesh.normals;
+        Vector2[] uv = mesh.uv;
+        int[] triangles = mesh.triangles;
+
+        byte[] data;
+        Thread newThread = new Thread(() => SerializeModel(tangents, vertices, normals, uv, triangles));
+        newThread.IsBackground = true;
+        newThread.Start();
+
+        Thread listenerThread = new Thread(Listener);
+        listenerThread.IsBackground = true;
+        listenerThread.Start();
+    }
+
+
+    /// <summary>
     /// Extracts model vert, uv, triangle. Converts them into float arrays, constructs into serializable class, serializes into byte array.
     /// </summary>
     /// <param name="verts"></param>
