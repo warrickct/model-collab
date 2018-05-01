@@ -382,26 +382,30 @@ public class CustomTransfer : MonoBehaviour {
 
     #endregion
 
-}
+    #region Structs
 
-public  struct MeshData
-{
-    //todo: Change name once properties start to include non-mesh properties. Maybe "ModelData".
-
-    public Vector4[] tangents;
-    public Vector3[] vertices;
-    public Vector3[] normals;
-    public Vector2[] uv;
-    public int[] triangles;
-
-    public MeshData(int[] triangles, Vector2[] uv, Vector3[] vertices, Vector3[] normals, Vector4[] tangents)
+    struct MeshData
     {
-        this.tangents = tangents;
-        this.triangles = triangles;
-        this.uv = uv;
-        this.vertices = vertices;
-        this.normals = normals;
+        //todo: Change name once properties start to include non-mesh properties. Maybe "ModelData".
+
+        public Vector4[] tangents;
+        public Vector3[] vertices;
+        public Vector3[] normals;
+        public Vector2[] uv;
+        public int[] triangles;
+
+        public MeshData(int[] triangles, Vector2[] uv, Vector3[] vertices, Vector3[] normals, Vector4[] tangents)
+        {
+            this.tangents = tangents;
+            this.triangles = triangles;
+            this.uv = uv;
+            this.vertices = vertices;
+            this.normals = normals;
+        }
     }
+
+    #endregion
+
 }
 
 [Serializable]
