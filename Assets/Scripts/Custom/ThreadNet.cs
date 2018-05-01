@@ -77,6 +77,29 @@ public class ThreadNet : MonoBehaviour {
 
         //get tangets normals and bounds as well.
 
+        Thread newThread = new Thread(() => SerializeModel(tangents, vertices, normals, uv, triangles));
+        newThread.IsBackground = true;
+        newThread.Start();
+
+        Thread listenerThread = new Thread(Listener);
+        listenerThread.IsBackground = true;
+        listenerThread.Start();
+    }
+
+
+    /// <summary>
+    /// Public function to send models from other functions.
+    /// </summary>
+    /// <param name="model"></param>
+    public void SendModel(GameObject model)
+    {
+        Mesh mesh = model.GetComponent<MeshFilter>().mesh;
+        Vector4[] tangents = mesh.tangents;
+        Vector3[] vertices = mesh.vertices;
+        Vector3[] normals = mesh.normals;
+        Vector2[] uv = mesh.uv;
+        int[] triangles = mesh.triangles;
+
         byte[] data;
         Thread newThread = new Thread(() => SerializeModel(tangents, vertices, normals, uv, triangles));
         newThread.IsBackground = true;
@@ -440,11 +463,33 @@ public class ThreadNet : MonoBehaviour {
             generatedSubModels = true;
         }
     }
+
+    public struct MeshData
+    {
+        //todo: Change name once properties start to include non-mesh properties. Maybe "ModelData".
+
+        public Vector4[] tangents;
+        public Vector3[] vertices;
+        public Vector3[] normals;
+        public Vector2[] uv;
+        public int[] triangles;
+
+        public MeshData(int[] triangles, Vector2[] uv, Vector3[] vertices, Vector3[] normals, Vector4[] tangents)
+        {
+            this.tangents = tangents;
+            this.triangles = triangles;
+            this.uv = uv;
+            this.vertices = vertices;
+            this.normals = normals;
+        }
+    }
 }
 
+/* Todo: Commented out meshdata here for now to prevent conflicts.
 /// <summary>
 /// Convenience class for returning multiple mesh data properties in one return.
 /// </summary>
+/// 
 public struct MeshData
 {
     //todo: Change name once properties start to include non-mesh properties. Maybe "ModelData".
@@ -464,6 +509,7 @@ public struct MeshData
         this.normals = normals;
     }
 }
+*/
 
 [Serializable]
 public class WireData2
