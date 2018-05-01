@@ -258,14 +258,15 @@ public class LargeDataTransfer : MonoBehaviour {
     {
         GameObject parentModel = new GameObject
         {
-            name = "rootModel",
+            name = "generatedModel",
+            tag = "RemoteModel",
         };
 
         foreach (MeshData meshData in meshDatas)
         {
             GameObject genModel = new GameObject
             {
-                name = "GeneratedModel"
+                name = "generatedSubModel",
             };
 
             //todo: Add additional mesh properties to the meshData class. 
