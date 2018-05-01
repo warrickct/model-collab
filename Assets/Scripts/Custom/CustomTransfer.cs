@@ -8,139 +8,107 @@ using System.IO;
 using System.Runtime.Serialization.Formatters.Binary;
 using System.Net.Sockets;
 using System.Net;
+using System.Text;
 
 public class CustomTransfer : MonoBehaviour {
 
-    // Receiving address
-    public string receiveIp;
-    public int receivePort;
+    #region Variables
 
-    // Sending address
-    public string sendIp;
-    public int sendPort;
+    //Sending variables
+    public GameObject modelToSend;
 
-    //SENDING
-    // Switch to start sending data
-    byte[] sendData;
-    // Switch to prevent sending called while already sending.
-    bool isSending = false;
+    byte[] dataToSend = null;
 
-    //RECEIVING
-    //For detecting if there's received meshdatas
+
+    //Receiving variables
+    WireData receivedWireData;
     MeshData[] subMeshDatasArray;
-    // To prevent generating models that are being generated.
-    bool isGeneratingModels = false;
 
-    // todo: Test model for sending via editor
-    public GameObject testModel;
+    // Thread control booleans
+    bool serializing;
+    bool sending;
+
+    bool generatingMesh;
+    bool generatingGameObject;
+
+    // Send/Receive Endpoint Config
+    [SerializeField] string receiveIp;
+    [SerializeField] int receivePort;
+
+    [SerializeField] string sendIp;
+    [SerializeField] int sendPort;
+
+    #endregion
+
+    #region Unity Functions
 
     private void Start()
     {
-        //Start receiving on script start.
-        Thread listenerThread = new Thread(Listener);
+        Thread listenerThread = new Thread(() => Listener());
         listenerThread.IsBackground = true;
         listenerThread.Start();
-
-        // todo: Testing the script by hardcoding a send.
-        SendModel(testModel);
     }
 
-    //sender
-    void SendModel(GameObject model)
+    private void Update()
     {
-        // Extract verts here so only threadsafe unity api (vectors) is used in thread.
-        Mesh mesh = model.GetComponent<MeshFilter>().mesh;
-        Vector4[] tangents = mesh.tangents;
-        Vector3[] vertices = mesh.vertices;
-        Vector3[] normals = mesh.normals;
-        Vector2[] uv = mesh.uv;
-        int[] triangles = mesh.triangles;
+        //Sending
+        if (modelToSend != null && !serializing)
+        {
+            Mesh mesh = modelToSend.GetComponent<MeshFilter>().mesh;
+            Vector4[] tangents = mesh.tangents;
+            Vector3[] vertices = mesh.vertices;
+            Vector3[] normals = mesh.normals;
+            Vector2[] uvs = mesh.uv;
+            int[] triangles = mesh.triangles;
 
-        Debug.Log("number of verts for local model: " + mesh.vertices.Length / 1000 + "k");
+            Debug.Log("Beginning serialization of model size: " + mesh.vertices.Length / 1000 + "k");
 
-        Thread newThread = new Thread(() => SerializeModel(tangents, vertices, normals, uv, triangles));
-        newThread.IsBackground = true;
-        newThread.Start();
+            Thread serializerThread = new Thread(() => SerializeModel(tangents, vertices, normals, uvs, triangles))
+            {
+                IsBackground = true
+            };
+            serializerThread.Start();
+
+            //modelToSend = null;
+            serializing = true;
+        }
+        if (dataToSend != null && !sending)
+        {
+            Thread senderThread = new Thread(() => Send(dataToSend))
+            {
+                IsBackground = true
+            };
+            senderThread.Start();
+
+            //dataToSend = null;
+            sending = true;
+        }
+
+
+        //Receiving
+        if (receivedWireData != null && !generatingMesh)
+        {
+            Thread meshGenerationThread = new Thread(() => GenerateMesh(receivedWireData))
+            {
+                IsBackground = true
+            };
+            meshGenerationThread.Start();
+
+            //receivedWireData = null;
+            generatingMesh = true;
+        }
+        if (subMeshDatasArray != null && !generatingGameObject)
+        {
+            Debug.Log(subMeshDatasArray.Length);
+
+            GenerateModels(subMeshDatasArray);
+        }
     }
 
-    void SerializeModel(Vector4[] tangents, Vector3[] verts, Vector3[] normals, Vector2[] uvs, int[] triangles)
-    {
-        List<float> tangentFloats = new List<float>();
-        foreach (Vector4 tangent in tangents)
-        {
-            tangentFloats.Add(tangent.w);
-            tangentFloats.Add(tangent.x);
-            tangentFloats.Add(tangent.y);
-            tangentFloats.Add(tangent.z);
-        }
+    #endregion
 
-        List<float> vertFloats = new List<float>();
-        foreach (Vector3 vert in verts)
-        {
-            vertFloats.Add(vert.x);
-            vertFloats.Add(vert.y);
-            vertFloats.Add(vert.z);
-        }
+    #region Network Receiving
 
-        List<float> normalFloats = new List<float>();
-        foreach (Vector3 normal in normals)
-        {
-            normalFloats.Add(normal.x);
-            normalFloats.Add(normal.y);
-            normalFloats.Add(normal.z);
-        }
-
-        List<float> uvFloats = new List<float>();
-        foreach (Vector2 uv in uvs)
-        {
-            uvFloats.Add(uv.x);
-            uvFloats.Add(uv.y);
-        }
-
-        float[] tangentFloatArray = tangentFloats.ToArray();
-        float[] vertFloatArray = vertFloats.ToArray();
-        float[] normalFloatArray = normalFloats.ToArray();
-        float[] uvFloatArray = uvFloats.ToArray();
-
-        Debug.Log("Completed array conversion: " + vertFloatArray.Length + " " + uvFloatArray.Length);
-
-        WireData2 wd2 = new WireData2(tangentFloatArray, vertFloatArray, normalFloatArray, uvFloatArray, triangles);
-
-        MemoryStream ms = new MemoryStream();
-        BinaryFormatter bf = new BinaryFormatter();
-        bf.Serialize(ms, wd2);
-        byte[] data = ms.ToArray();
-
-        sendData = data;
-        Debug.Log("Serialization finished. Added serialized to sendData queue");
-    }
-
-    //Sender 
-    void SenderThread(byte[] data)
-    {
-
-        IPEndPoint ipEndPoint = new IPEndPoint(IPAddress.Parse(sendIp), sendPort);
-
-        Socket client = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
-        Debug.Log("client set up");
-
-        client.Connect(ipEndPoint);
-        Debug.Log("connected");
-
-        int dataLength = data.Length;
-        byte[] sizeData = BitConverter.GetBytes(dataLength);
-
-        //client.Send(sizeData);
-        client.Send(data);
-        client.Close();
-
-        //clear send buffer, notify that sending thread has stopped.
-        sendData = null;
-        isSending = false;
-    }
-
-    //receiver
-    //Receive the stream
     void Listener()
     {
         IPEndPoint ipEndPoint = new IPEndPoint(IPAddress.Parse(receiveIp), receivePort);
@@ -151,7 +119,6 @@ public class CustomTransfer : MonoBehaviour {
         byte[] bytes = new byte[1024];
         String data = null;
 
-        //Continuously listens for tcp.
         while (true)
         {
             TcpClient client = tcpListener.AcceptTcpClient();
@@ -166,26 +133,19 @@ public class CustomTransfer : MonoBehaviour {
             while ((i = netStream.Read(bytes, 0, bytes.Length)) != 0)
             {
                 fullData.AddRange(bytes);
+                data = Encoding.ASCII.GetString(bytes, 0, i);
+                data.ToUpper();
                 Debug.Log("receiving");
             }
             byte[] fullDataBytes = fullData.ToArray();
             BinaryFormatter bf = new BinaryFormatter();
             MemoryStream ms = new MemoryStream(fullDataBytes);
-            WireData wd = bf.Deserialize(ms) as WireData;
-
-            Debug.Log("finished receiving and converted to wiredata");
-
-            //todo: Call reconstruct mesh arrays thread with wiredata as param.
-            Thread reconstructThread = new Thread(() => ReconstructMeshArrays(wd));
-            reconstructThread.IsBackground = true;
-            reconstructThread.Start();
+            receivedWireData = bf.Deserialize(ms) as WireData;
         }
     }
 
-    //receiveHandler
-    void ReconstructMeshArrays(WireData wd)
+    void GenerateMesh(WireData wd)
     {
-        Debug.Log("Reconstruction thread started");
         Debug.Log("received tangets length" + wd.tangents.Length);
 
         //tangents
@@ -224,11 +184,7 @@ public class CustomTransfer : MonoBehaviour {
             vectorUvs.Add(uv);
         }
 
-
         //dont need to do anything for triangles.
-
-        Debug.Log("Reconstruction check 1");
-
 
         Vector4[] vecTangentArray = vecTangents.ToArray();
         Vector3[] vecVertArray = vectorVertices.ToArray();
@@ -239,22 +195,20 @@ public class CustomTransfer : MonoBehaviour {
         //cast to meshdata object for easier return object.
         MeshData meshData = new MeshData(intTrianglesArray, vecUvsArray, vecVertArray, vecNormalArray, vecTangentArray);
 
-        Debug.Log("Reconstruction check 2");
-
+        //test: make submesh if mesh too big then generate that instead
 
         // Unity's vertices limit is around 65k vertices. 
         const int VerticesLimit = 60000;
+        List<MeshData> subMeshDatas = new List<MeshData>();
 
+
+        // Iterative submesh generation start.
         List<Vector3> verticesList = new List<Vector3>();
         List<Vector3> normalsList = new List<Vector3>();
         List<int> trianglesList = new List<int>();
 
         int triValue = 0;
 
-        //Create dynamic list that when completed fills the subMesh array in an atomic manner.
-        List<MeshData> subMeshDatas = new List<MeshData>();
-
-        // Start splitting mesh every vert limit
         for (int j = 0; j < meshData.triangles.Length; j++)
         {
             verticesList.Add(meshData.vertices[meshData.triangles[j]]);
@@ -292,19 +246,27 @@ public class CustomTransfer : MonoBehaviour {
             normals = normalsList.ToArray(),
             triangles = trianglesList.ToArray(),
         };
-        Debug.Log(final.vertices.Length);
+        Debug.Log("Final submodel vert size: " + final.vertices.Length);
         subMeshDatas.Add(final);
         subMeshDatasArray = subMeshDatas.ToArray();
+
+        //Setting to prevent generating same meshes again.
+        receivedWireData = null;
+        generatingMesh = false;
     }
 
-    //Convert the received into a game object.
     void GenerateModels(MeshData[] meshDatas)
     {
+        GameObject parentModel = new GameObject
+        {
+            name = "rootModel",
+        };
+
         foreach (MeshData meshData in meshDatas)
         {
             GameObject genModel = new GameObject
             {
-                name = "GeneratedModel" + meshData
+                name = "GeneratedModel"
             };
 
             //todo: Add additional mesh properties to the meshData class. 
@@ -326,36 +288,123 @@ public class CustomTransfer : MonoBehaviour {
 
             Material genMaterial = generatedRenderer.material = new Material(Shader.Find("Standard"));
             genMaterial.name = "GeneratedMaterial";
+
+            genModel.transform.parent = parentModel.transform;
         }
 
-        // Clear models to generate queue.
-        // Turn bool to accept generation calls again.
+        //Setting to prevent making previously made models
         subMeshDatasArray = null;
-        isGeneratingModels = false;
+        generatingGameObject = false;
     }
 
+    #endregion
 
-    private void Update()
+    #region Network Sending
+
+    void SerializeModel(Vector4[] tangents, Vector3[] vertices, Vector3[] normals, Vector2[] uvs, int[] triangles)
     {
-        //if data ready to be sent and sending thread not already running.
-        if (sendData != null && isSending == false)
+       
+
+        List<float> tangentFloats = new List<float>();
+        foreach (Vector4 tangent in tangents)
         {
-            Debug.Log("send data contains data. Starting sending thread.");
-            // Send data if there's data in the send queue.
-            Thread senderThread = new Thread(() => SenderThread(sendData));
-            senderThread.IsBackground = true;
-            senderThread.Start();
-            
-            //Prevent from being called again. Is set back to false at end of thread.
-            isSending = true;
+            tangentFloats.Add(tangent.w);
+            tangentFloats.Add(tangent.x);
+            tangentFloats.Add(tangent.y);
+            tangentFloats.Add(tangent.z);
         }
-        if (subMeshDatasArray != null && isGeneratingModels == false)
+
+        List<float> vertFloats = new List<float>();
+        foreach (Vector3 vert in vertices)
         {
-            GenerateModels(subMeshDatasArray);
+            vertFloats.Add(vert.x);
+            vertFloats.Add(vert.y);
+            vertFloats.Add(vert.z);
         }
+
+        List<float> normalFloats = new List<float>();
+        foreach (Vector3 normal in normals)
+        {
+            normalFloats.Add(normal.x);
+            normalFloats.Add(normal.y);
+            normalFloats.Add(normal.z);
+        }
+
+        List<float> uvFloats = new List<float>();
+        foreach (Vector2 uv in uvs)
+        {
+            uvFloats.Add(uv.x);
+            uvFloats.Add(uv.y);
+        }
+
+        float[] tangentFloatArray = tangentFloats.ToArray();
+        float[] vertFloatArray = vertFloats.ToArray();
+        float[] normalFloatArray = normalFloats.ToArray();
+        float[] uvFloatArray = uvFloats.ToArray();
+
+        Debug.Log("Completed array conversion: " + vertFloatArray.Length + " " + uvFloatArray.Length);
+
+        WireData wd = new WireData(tangentFloatArray, vertFloatArray, normalFloatArray, uvFloatArray, triangles);
+
+        MemoryStream ms = new MemoryStream();
+        BinaryFormatter bf = new BinaryFormatter();
+        bf.Serialize(ms, wd);
+        byte[] data = ms.ToArray();
+
+        dataToSend = data;
+
+        // Setting so it wont redo the same model.
+        modelToSend = null;
+        serializing = false;
+    }
+
+    void Send(byte[] data)
+    {
+        IPEndPoint ipEndPoint = new IPEndPoint(IPAddress.Parse(sendIp), sendPort);
+
+        Socket client = new Socket(AddressFamily.InterNetwork, SocketType.Stream, ProtocolType.Tcp);
+        Debug.Log("client set up");
+
+        client.Connect(ipEndPoint);
+        Debug.Log("connected");
+
+        int dataLength = data.Length;
+        byte[] sizeData = BitConverter.GetBytes(dataLength);
+
+        //client.Send(sizeData);
+        client.Send(data);
+        client.Close();
+
+        // Settings to it wont resend old serialized models
+        dataToSend = null;
+        sending = false;
+    }
+
+    #endregion
+
+}
+
+public  struct MeshData
+{
+    //todo: Change name once properties start to include non-mesh properties. Maybe "ModelData".
+
+    public Vector4[] tangents;
+    public Vector3[] vertices;
+    public Vector3[] normals;
+    public Vector2[] uv;
+    public int[] triangles;
+
+    public MeshData(int[] triangles, Vector2[] uv, Vector3[] vertices, Vector3[] normals, Vector4[] tangents)
+    {
+        this.tangents = tangents;
+        this.triangles = triangles;
+        this.uv = uv;
+        this.vertices = vertices;
+        this.normals = normals;
     }
 }
 
+[Serializable]
 public class WireData
 {
     //todo: Rename this class and make it the default wiredata class.
