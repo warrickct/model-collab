@@ -364,7 +364,7 @@ public class LargeDataTransfer : MonoBehaviour {
         serializing = false;
     }
 
-    void Send(byte[] data)
+    public void Send(byte[] data)
     {
         IPEndPoint ipEndPoint = new IPEndPoint(IPAddress.Parse(sendIp), sendPort);
 
